@@ -185,17 +185,120 @@ There’s several others, but these are the most frequent
 
 ——-
 
-### Hello World!
 
-```javascript
-function myFunction(){
-	alert(“Hello World!”)
-};
-```
+# Problem Statement
 
-### **loooong** lines are scaled down
+A bank would like to be able to identify current loans that are at risk of defaulting.
 
-```objectivec 
-UIView *someView = [[UIView alloc] init];
-NSString *string = @"some string that is really, really, really really long, and has many, many, many words";
-```
+- Conservative Approach - bank misses out on potential profit, but limits losses on loan defaults
+- Aggressive Approach - bank doesn’t miss potential profits, but loses profits on loan defaults
+
+——-
+
+# So what do we do?
+
+Depends on the clients requirements.
+
+- Optimize for profit ( aggressive model )
+- Balanced
+- Optimize for accuracy ( conservative model )
+
+——-
+
+## Getting to know you(r) data
+
+- 50,000 loan applications
+- 32 variables
+
+Don’t take my word for it, let R tell us what we need to know!
+
+^ 1. Know Your Data
+
+——-
+
+## Getting to know you(r) data cont.
+
+- Variables with NA’s?
+- Identify “bad” loans / loans at risk of defaulting
+- What variable type are we using when identifying loans as good/bad?
+
+^ loan “status”
+^ Charged Off = bad
+^ Default = bad
+^ Fully Paid = good
+
+——-
+
+
+## Loan Status Preparation
+
+**Bad Loans**
+
+- Charged Off
+- Default
+
+**Good Loans**
+
+- Fully Paid
+
+
+^ 2. Loan Status Preparation
+
+——-
+
+## What variables don’t we need?
+
+loanID:
+
+- This unique identifier, though relevant to the bank, is not needed by our model to predict which loans may default.
+
+employment:
+
+- Though being employed is a significant factor when approving a loan, this dataset also contains income, which is allows us to assume employment if larger than zero.
+
+^ 3. Exclusion of Irrelevant Variables
+
+——-
+
+## What variables don’t we need? cont.
+
+totalPaid:
+
+- This variable can only be determined after a loan has been issued and will be excluded from the test data.
+
+state:
+
+- The state of the bank / applicant isn't expect to impact the applicants ability to manage payments on a loan.
+
+
+Other variables such as “reason” and income “verified” may be insignificant, but may contribute to likelihood of defaulting.
+
+——-
+
+## So exclude variables on intuition?
+
+- Don’t ever exclude variables on intuition on first glance
+
+- Only variables that over correct the model
+	- totalPaid would do this
+
+- There are statistical test(s) to select which variables to use in our model.
+	- we’ll go over them when we build our model
+
+——-
+
+
+## Transforming Data
+
+- Statistics likes normal distributions
+- Some data follows it naturally, other times, not.
+- We can generally produce normal distributions through categorical variables and data transformations
+- Ie sqroot, log, cubed root, nlog
+
+Why?
+
+- convenience, reducing skewness, relationships
+
+^ http://fmwww.bc.edu/repec/bocode/t/transint.html
+
+

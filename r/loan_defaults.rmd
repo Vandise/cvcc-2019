@@ -1,0 +1,53 @@
+## 0. Libraries
+
+```{r setup, include=FALSE}
+#knitr::opts_chunk$set(echo = TRUE)
+
+#install.packages("tidyverse")
+#install.packages('caTools')
+devtools::install_github("sachsmc/plotROC")
+library(plotROC)
+library(caTools)
+library(purrr)
+library(plyr)
+library(dplyr)
+library(ggplot2)
+library(gridExtra)
+library(cowplot)
+library(ROCR)
+require(HH)
+library(pscl)
+library(caret)
+library('ROSE')
+library(ResourceSelection)
+```
+
+## 1. Know Your Data
+
+Loading data:
+
+```{r, include=FALSE}
+loan_data <- read.csv("../data/loans.csv", header = T)
+```
+
+Exploring the variables:
+
+```{r, include=FALSE}
+summary(loan_data)
+```
+
+## 2. Loan Status Preparation
+
+```{r, include=FALSE}
+
+loan_data$loan_status[loan_data$status == 'Charged Off' || loan_data$status == 'Default'] <- 'Bad'
+
+loan_data$loan_status[loan_data$status == 'Fully Paid'] <- 'Good'
+loan_data$loan_status <- as.factor(loan_data$loan_status)
+
+# print out results
+loan_data %>% group_by(loan_status) %>% summarise(no_rows = length(loan_status))
+```
+
+## 3. Exclusion of Irrelevant Variables
+
