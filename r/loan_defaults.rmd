@@ -51,3 +51,62 @@ loan_data %>% group_by(loan_status) %>% summarise(no_rows = length(loan_status))
 
 ## 3. Exclusion of Irrelevant Variables
 
+```{r, include=FALSE}
+loan_data <- loan_data[ , -which(names(loan_data) %in% c("loanID","employment", "state"))]
+```
+
+## 4. Transforming Data - Categories
+
+```{r, echo=F, include=T, warning=F, message=F}
+plot(loan_data$length, col="blue", main="Histogram of Employment Length - Before")
+xfit<-seq(min(as.numeric(loan_data$length)),max(as.numeric(loan_data$length)),length=500) 
+yfit<-dnorm(xfit,mean=mean(as.numeric(loan_data$length)),sd=sd(as.numeric(loan_data$length))) 
+yfit <- yfit*diff(h$mids[1:2])*length(as.numeric(loan_data$length)) 
+lines(xfit, yfit, col="black", lwd=2)
+```
+
+```{r, echo=F, include=T, warning=F, message=F}
+from <- c('n/a', '< 1 year', '1 year', '2 years', '3 years', '4 years', '5 years',
+          '6 years', '7 years', '8 years', '9 years', '10+ years')
+to <- c("missing", '< 1 year', '1 to 3 years', '1 to 3 years', '1 to 3 years', '4 to 6 years', '4 to 6 years', '4 to 6 years', '7 to 9 years', '7 to 9 years', '7 to 9 years', '10+ years')
+
+loan_data$length <- mapvalues(loan_data$length, from = from, to = to)
+loan_data$length <- as.factor(loan_data$length)
+
+#plot(loan_data$length, col="blue", main="Histogram of Employment Length")
+
+hist(as.numeric(loan_data$length))
+xfit<-seq(min(as.numeric(loan_data$length)),max(as.numeric(loan_data$length)),length=500) 
+yfit<-dnorm(xfit,mean=mean(as.numeric(loan_data$length)),sd=sd(as.numeric(loan_data$length))) 
+yfit <- yfit*diff(h$mids[1:2])*length(as.numeric(loan_data$length)) 
+lines(xfit, yfit, col="black", lwd=2)
+
+summary(loan_data$length)
+```
+
+
+
+#### Income
+
+```{r include=FALSE}
+plot(loan_data$income)
+
+loan_data$income_cat[ loan_data$income < 9700 ] <- "< 9700"
+loan_data$income_cat[ loan_data$income >= 9700 & loan_data$income <= 39475 ] <- "9700 - 39475"
+loan_data$income_cat[ loan_data$income > 39475 & loan_data$income <= 84200 ] <- "39476 - 84200"
+loan_data$income_cat[ loan_data$income > 84200 & loan_data$income <= 160725 ] <- "84200 - 160725"
+loan_data$income_cat[ loan_data$income > 160726 & loan_data$income <= 204101 ] <- "160726 - 204101"
+loan_data$income_cat[ loan_data$income > 204101 & loan_data$income <= 510300 ] <- "204102 - 510300"
+loan_data$income_cat[ loan_data$income > 510300 ] <- "> 510300"
+
+loan_data$income_cat <- as.factor(loan_data$income_cat)
+
+summary(loan_data$income_cat)
+
+catresult <- c( 1, 11, 7400, 27405, 13071, 1124, 926, 62)
+plot(catresult)
+
+```
+
+
+

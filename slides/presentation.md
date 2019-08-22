@@ -301,4 +301,44 @@ Why?
 
 ^ http://fmwww.bc.edu/repec/bocode/t/transint.html
 
+^ 4. Transforming Data - Categories
+
+——-
+
+## Categorical - Employment
+
+Employment: uniform
+
+![inline](img/category_employment_before.png)
+
+——-
+
+## Categorical - Employment
+
+Employment (categorized): normal slightly right-skewed
+
+![inline](img/category_employment_after.png)
+
+——-
+
+## Categorical - Income
+
+Income: uniform
+Categorized: normal
+
+![inline](img/category_income_before.png)
+
+——-
+
+## Removing / imputing values
+
+- Invalid records need to be removed or inferred
+- Inference is more accurate if a normal distribution
+	- mean, median, mode common inference
+
+R reports missing values as “NA”. Use “summary” to see which variables have invalid records.
+
+
+^ 5. Transforming Data - Removing Records
+
 
