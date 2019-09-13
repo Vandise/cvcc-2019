@@ -31,6 +31,17 @@
 
 ——-
 
+# Ground Rules
+
+- Never believe what a statistician tells you
+- Never believe in charts or graphs
+	- you can make them say anything
+- Polls / random sampling are an irresponsible representation of a population
+
+![inline](img/cell_phones.png)
+
+——-
+
 # So what is Data Science?
 
 Textbook Definition:
