@@ -288,9 +288,9 @@ Other variables such as “reason” and income “verified” may be insignific
 
 ## So exclude variables on intuition?
 
-- Don’t ever exclude variables on intuition on first glance
+- Don’t ever exclude variables on intuition in the final model
 
-- Only variables that over correct the model
+- Initially only variables that over correct the model
 	- totalPaid would do this
 
 - There are statistical test(s) to select which variables to use in our model.
@@ -352,4 +352,83 @@ R reports missing values as “NA”. Use “summary” to see which variables h
 
 ^ 5. Transforming Data - Removing Records
 
+---
 
+## Overfitting, Credit Ratios, and NA's
+
+Loans that are currently being paid off, late, or in grace period have been removed from the data. These records may be in risk of default or may be fully paid in the future, but have yet to be converted to that status, thus irrelevant for our model. 
+
+Records missing the loan amount, rate, payment, and income were also removed. This resulted in 34, 916 records in our sample.
+
+^ 5. Transforming Data - Removing Records
+
+---
+
+## Variable Selection
+
+You can anticipate which variables may be significant and formulate, then test the model, or run a variable correlation test!
+
+- We have to avoid highly correlated variables as they may cause us to overfit our model
+	- meaning we may become good at prediciting good loans, but not bad
+	- vise-verse 
+
+^ 6. Correlation
+
+---
+
+## Pearson Correlation Matrix
+
+- 0 = no correlation
+- < 0 = negative correlation
+- ~ +- 0.3 = some correlation
+- ~ +- 0.8 = highly correlated
+
+- There is a strong correlation between the loan amount and payment (0.952245818).
+
+- This is expected as the payment will determine the loan amount.
+
+- We also can see a correlation between payment and income (0.466157354) and amount and income (0.480909855).
+
+---
+
+## Variable Selection - Income
+
+- Anticipated to reflect loan approval
+- Heavily Right Skewed
+
+![inline](img/income_skewed.png)
+
+^ 7. Variable Selection - Income
+
+^ We transform it!
+
+---
+
+## With a little <3
+
+- Anticipated to reflect loan approval
+- Heavily Right Skewed
+
+![inline](img/income_sqrt.png)
+
+---
+
+## The logistic model
+
+We're going to use the correlation matrix as our primary driving factor for variable selection.
+
+- dependent variable: loan_status
+- Independent variables:
+	- debtIncRat, pubRec, income, totalAcc, home, length, delinq2yr, rate, grade, inq6mth, reason, amount, totalRevBal, revolRatio 
+
+^ 8. The Logistic Model
+
+---
+
+## To R!
+
+Lets build a model with R!
+
+^ 8. The Logistic Model
+
+---

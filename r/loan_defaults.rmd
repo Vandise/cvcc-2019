@@ -2,24 +2,24 @@
 
 ```{r setup, include=FALSE}
 #knitr::opts_chunk$set(echo = TRUE)
-
-#install.packages("tidyverse")
+#install.packages("VIF")
 #install.packages('caTools')
-devtools::install_github("sachsmc/plotROC")
-library(plotROC)
+#devtools::install_github("sachsmc/plotROC")
+#library(plotROC)
 library(caTools)
 library(purrr)
 library(plyr)
 library(dplyr)
 library(ggplot2)
 library(gridExtra)
-library(cowplot)
+#library(cowplot)
 library(ROCR)
 require(HH)
 library(pscl)
 library(caret)
 library('ROSE')
 library(ResourceSelection)
+library(VIF) 
 ```
 
 ## 1. Know Your Data
@@ -110,3 +110,118 @@ plot(catresult)
 
 
 
+
+## 5. Transforming Data - Removing Records
+
+```{r, include=FALSE}
+loan_data <- loan_data[!(loan_data$status %in% c('Current', 'Late (16-30 days)', 'Late (31-120 days)')),]
+
+loan_data <- loan_data[!is.na(loan_data$amount), ]
+loan_data <- loan_data[!is.na(loan_data$rate), ]
+loan_data <- loan_data[!is.na(loan_data$payment), ]
+loan_data <- loan_data[!is.na(loan_data$income), ]
+loan_data <- loan_data[!is.na(loan_data$length), ]
+
+summary(loan_data)
+```
+
+Credit Ratios:
+
+```{r include=F}
+m <- summary(loan_data$revolRatio)[[3]]
+
+loan_data <- (loan_data %>% mutate(
+  revolRatio = coalesce(revolRatio, m)
+))
+
+m <- as.integer(summary(loan_data$bcOpen)[[3]])
+
+loan_data <- (loan_data %>% mutate(
+  bcOpen = coalesce(bcOpen, m)
+))
+
+m <- as.double(summary(loan_data$bcRatio)[[3]])
+
+loan_data <- (loan_data %>% mutate(
+  bcRatio = coalesce(bcRatio, m)
+))
+
+summary(loan_data)
+```
+
+
+## 6. Variable Selection - Correlation
+
+```{r echo=FALSE, INCLUDE=FALSE}
+cor(loan_data[, sapply(loan_data, class) != 'factor' ]) # factors can't be in correlation
+```
+
+## 7. Variable Selection - Income
+
+One major contributing factor to the ability to pay off loans is to have an income. 
+
+```{r echo=F}
+hist(loan_data$income, main="Figure 1 - Initial Income Histogram", xlab="Income")
+```
+
+The income histogram immediately depicts that there are some extreme values, making this data appear right-skewed. The Z-Score's for the income field depict that the median is -0.1604 standard deviations away from the mean, but the maximum value is 115.5 standard deviations; suggesting we have some outliers to either: remove, inferr, or possibly turn income into a categorical variable depicting income range.
+
+```{r echo=F}
+loan_sd <- sd(loan_data$income)*sqrt((length(loan_data$income)-1)/(length(loan_data$income)))
+loan_data$income_zscore <- (loan_data$income - mean(loan_data$income)) / loan_sd
+
+summary(loan_data$income_zscore)
+```
+
+
+```{r echo=F}
+loan_data$income[ loan_data$income_zscore > 4 ] <- median(loan_data$income, na.rm=TRUE)
+loan_data$income[ loan_data$income_zscore < -4 ] <- median(loan_data$income, na.rm=TRUE)
+
+hist(loan_data$income, main="Figure 2 - Income within +- 4 Std Deviations", xlab="Income")
+boxplot(loan_data$income, main="Figure 3 - Income within +- 4 Std Deviations",  ylab="Income")
+```
+
+Omitting 134 containing income within +- 4 standard deviations from the mean and converting them to NA values, we can see that our income sample is right-skewed. In attempt to normalize the data and reduce the extremeness of the tail, depicted in the boxplot.
+
+```{r echo=F}
+loan_data$income_sqrt <- sqrt(loan_data$income)
+hist(loan_data$income_sqrt, main="Figure 4 - Sqrt of Income", xlab="Sqrt - Income")
+```
+
+
+## 8. The Logistic Model
+
+After reviewing the data and identifying correlations between variables, the following independent variables were selected to determine our dependent variable loan_status: debtIncRat, pubRec, income, totalAcc, home, length, delinq2yr, rate, grade, inq6mth, reason, amount, totalRevBal, revolRatio. Due to the correlation between amount and payment, this was excluded. There is a slight correlation between payment, income and amount, however not a strong enough correlation to conclude that they should be excluded.
+
+```{r echo=F, INCLUDE=F}
+set.seed(312)
+#names(subset(loan_data))
+
+loan_data.selected_fields <- subset(loan_data, select = c(1, 3, 5:8, 11:14, 16:18, 27, 30))
+sample_data <- sample.split(loan_data.selected_fields$loan_status, 0.80)
+loan_data.training.data <- subset(loan_data.selected_fields, sample_data == TRUE)
+loan_data.test.data <- subset(loan_data.selected_fields, sample_data == FALSE)
+
+loan_data.model.full <- glm(loan_status ~ ., data = loan_data.training.data, family = "binomial")
+summary(loan_data.model.full)
+```
+
+The prediction was ran against the fitted data with a threshold of 0.5, where any value >= 0.5 is a Good loan, and anything < 0.5 is bad.
+
+```{r echo=F}
+threshold = 0.5
+prob_full <- predict(loan_data.model.full, newdata = loan_data.test.data, type = "response")
+prob_cut <- ifelse(prob_full > threshold, 'Good', 'Bad')
+
+cTab <- table(prob_cut, loan_data.test.data$loan_status)
+v <- sum(diag(cTab)) / sum(cTab)
+
+print(paste('Proportion correctly predicted = ', v))
+```
+
+According to our training sample, our model predicts 77.66% of the data, suggesting we have a decent model fitting our data.
+
+```{r echo=F}
+vif(loan_data.model.full)
+```
