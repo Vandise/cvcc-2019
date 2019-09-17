@@ -1,0 +1,622 @@
+---
+title: 'Predicting Loan Defaults with Logistic Regression'
+author: "Benjamin J. Anderson"
+date: "04.22.2019"
+output:
+  word_document
+fontsize: 12pt
+---
+
+```{r setup, include=FALSE}
+#knitr::opts_chunk$set(echo = TRUE)
+
+#install.packages("tidyverse")
+#install.packages('caTools')
+devtools::install_github("sachsmc/plotROC")
+library(plotROC)
+library(caTools)
+library(purrr)
+library(plyr)
+library(dplyr)
+library(ggplot2)
+library(gridExtra)
+library(cowplot)
+library(ROCR)
+require(HH)
+library(pscl)
+library(caret)
+library('ROSE') # ds700 fp
+library(ResourceSelection)
+```
+
+## Executive Summary
+
+This paper explores data provided by a bank in order to create two logistic models to predict loans that are at risk of defaulting. These models are utilized to maximize profit and prediction accuracy. The models are built upon a dataset provided by the bank containing 50,000 loaan applications. Initially this dataset contains 32 variables. Before the creation of the logisitic models, the data was sanitized by removing any outliers, excluding any, initial, irrelevant variables, grouping and categorizing variables, and removal of incomplete loans. Any strongly correlated variables were also excluded from the model.
+
+The two logistic models are built upon a training set of 6,938 random observations with 14 variables. These models were evaluated using metrics produced by confusion matracies, AIC, AUC, and profits. The models are improved upon by identifying the cut-off value (threshold) in which will maximize accuracy and profit. 
+
+The results show that our models, though excellent at predicting loans that are not in risk of default, are poor when it comes to predicting loans that have defaulted due to unbalanced training data. A balanced model was constructed utilizing the same variables as our initial model, finding it performed significantly worse than our initial model at the same threshold. Ignoring specificity and sensitivity, the maximum accuracy is achieved at a threshold of 0.05 -- resulting with a prediction accuracy of 77.8%. At a threshold level of 0.25, or model had a false-positive rate of 8% with a net profit of $3,100,486 and an accuracy of 73.3%.
+
+## 1. Introduction
+
+A bank would like to predict which loan applicants who are likely to default. The bank has provided a sample of 50,000 loan applications and their current status; "DEFAULT", "CURRENT", "CHARGED OFF". A logistic regression model will be utilized to augment the banks loan application and review process. Several logistic regression models will be tested with a range of predictor variable in an attempt to identify the best performing model suiting the goals of the bank with the dataset provided.
+
+## 3. Preparing and Cleaning the Data
+
+```{r, include=FALSE}
+loan_data <- read.csv("data/loans.csv", header = T)
+```
+
+The bank has provided a sample of 50,000 loan applications, containing 30 fields for each record. Not all of the fields are intuitively useful for the logistic regression model and the data was santized.
+
+# 3.2 Loan Status Preparation
+
+```{r, include=FALSE}
+loan_data$loan_status[loan_data$status == 'Charged Off' || loan_data$status == 'Default'] <- 'Bad'
+loan_data$loan_status[loan_data$status == 'Fully Paid'] <- 'Good'
+loan_data$loan_status <- as.factor(loan_data$loan_status)
+
+loan_data %>% group_by(loan_status) %>% summarise(no_rows = length(loan_status))
+```
+
+The response variable, status, has been utilized to construct a factor variable, loan_status, with two levels: "Good" and "Bad" -- where loans classified as "Good" are loans that have been fully paid, and loans classified as "Bad" are loans that have a status of "Charged Off" or "Default". This resulted in 22,926 loans classified as "Bad" and 27,074 loans as "Good".
+
+# 3.3 Exclusion of Irrelevant Variables
+
+On initial review of the dataset, the following variables were excluded from the dataset:
+
+1. **loanID**:
+  This unique identifier, though relevant to the bank, is not needed by our model to predict which loans may default.
+2. **employment**:
+  Though being employed is a significant factor when approving a loan, this dataset also contains income, which is allows us to assume employment if larger than zero.
+3. **totalPaid**:
+  This variable can only be determined after a loan has been issued and will be excluded from the test data.
+4. **state**:
+  The state of the bank / applicant isn't expect to impact the applicants ability to manage payments on a loan.
+
+```{r, include=FALSE}
+loan_data <- loan_data[ , -which(names(loan_data) %in% c("loanID","employment", "state"))]
+```
+
+Other considerations were taken for the following variables, but were kept due to the following:
+
+1. **reason**:
+  Different types of loans may contribute to the likelihood of defaulting.
+2. **verified**:
+  If the income hasn't been verified and an applicant has lied on the application, the applicant may default on the loan if they cannot afford the payments.
+
+# 3.4 Grouping of Categorical Variables
+
+The length of employment may be a contributing factor as to how long an applicant may be able to pay for a loan. For example, employees who've worked with a comapny for a significant amount of time show that they have a stable income whereas those who have worked with an employer for only a few years may not reflect stability.
+
+The length of employment is categorized from less than 1 year and to 10+ years, with 2680 not applicable "n/a" records. Such situations being classified as "n/a" may include retirement or being unemployed. The employment length field has been changed to be categorized as:
+
+* missing
+* < 1 year
+* 1 to 3 years
+* 4 to 6 years
+* 7 to 9 years
+* 10+ years
+
+Resulting with the following categories:
+
+```{r, echo=F, include=T, warning=F, message=F}
+from <- c('n/a', '< 1 year', '1 year', '2 years', '3 years', '4 years', '5 years',
+          '6 years', '7 years', '8 years', '9 years', '10+ years')
+to <- c("missing", '< 1 year', '1 to 3 years', '1 to 3 years', '1 to 3 years', '4 to 6 years', '4 to 6 years', '4 to 6 years', '7 to 9 years', '7 to 9 years', '7 to 9 years', '10+ years')
+
+loan_data$length <- mapvalues(loan_data$length, from = from, to = to)
+loan_data$length <- as.factor(loan_data$length)
+
+plot(loan_data$length, col="blue", main="Histogram of Employment Length")
+summary(loan_data$length)
+```
+
+Income was also categorized into 7 brackets based off the US tax brackets for 2019.
+
+- < 9700
+- 9700 - 39475
+- 39476 - 84200
+- 84200 - 160725
+- 160726 - 204101
+- 204102 - 510300
+- > 510300
+
+```{r include=FALSE}
+plot(loan_data$income)
+
+loan_data$income_cat[ loan_data$income < 9700 ] <- "< 9700"
+loan_data$income_cat[ loan_data$income >= 9700 & loan_data$income <= 39475 ] <- "9700 - 39475"
+loan_data$income_cat[ loan_data$income > 39475 & loan_data$income <= 84200 ] <- "39476 - 84200"
+loan_data$income_cat[ loan_data$income > 84200 & loan_data$income <= 160725 ] <- "84200 - 160725"
+loan_data$income_cat[ loan_data$income > 160726 & loan_data$income <= 204101 ] <- "160726 - 204101"
+loan_data$income_cat[ loan_data$income > 204101 & loan_data$income <= 510300 ] <- "204102 - 510300"
+loan_data$income_cat[ loan_data$income > 510300 ] <- "> 510300"
+
+loan_data$income_cat <- as.factor(loan_data$income_cat)
+
+summary(loan_data$income_cat)
+```
+
+# 3.5 Removal of Records
+
+Loans that are currently being paid off, late, or in grace period have been removed from the data. These records may be in risk of default or may be fully paid in the future, but have yet to be converted to that status, thus irrelevant for our model. Records missing the loan amount, rate, payment, and income were also removed. This resulted in 34, 916 records in our sample.
+
+```{r, include=FALSE}
+loan_data <- loan_data[!(loan_data$status %in% c('Current', 'Late (16-30 days)', 'Late (31-120 days)')),]
+
+loan_data <- loan_data[!is.na(loan_data$amount), ]
+loan_data <- loan_data[!is.na(loan_data$rate), ]
+loan_data <- loan_data[!is.na(loan_data$payment), ]
+loan_data <- loan_data[!is.na(loan_data$income), ]
+loan_data <- loan_data[!is.na(loan_data$length), ]
+
+summary(loan_data)
+```
+
+This resulted in bcOpen having 363 missing records, bcRatio having 388, and revolRatio with 15.
+
+```{r include=F}
+m <- summary(loan_data$revolRatio)[[3]]
+
+loan_data <- (loan_data %>% mutate(
+  revolRatio = coalesce(revolRatio, m)
+))
+
+m <- as.integer(summary(loan_data$bcOpen)[[3]])
+
+loan_data <- (loan_data %>% mutate(
+  bcOpen = coalesce(bcOpen, m)
+))
+
+m <- as.double(summary(loan_data$bcRatio)[[3]])
+
+loan_data <- (loan_data %>% mutate(
+  bcRatio = coalesce(bcRatio, m)
+))
+
+summary(loan_data)
+```
+
+# 3.6.1 Revolving Credit Ratio
+
+The proportion of revolving credit in use, "revolRation", is anticipated to have some impact on our response variable as revolving credit affects an applicants ability to pay larger loans and interest rates. Considering that there are only 15 records in the entire sample with missing values, it is anticipated that there will be minimal effects to imputing these records from the dataset.
+
+# 3.6.2 Credit Card Use and Ratio
+
+The ability of an applicant to make payments on a new loan is expected to be affected by current credit card balances unless the loan is to consolidate credit card debt. Due to the missing credit card open credit amount, "bcOpen", and credit card debt ratio, "bcRatio", impacting a maximum of 2% of the sample. These missing values have been inferred by the median value.
+
+## 4. Exporing and Transforming the Data
+
+Logistic Regression models do not require a normal distribution for the predictor variables, however, a skewed predictor variable is likely to have extreme values that will influence the resulting model. Several predictor variables were selected based on their anticipated statistical significance.
+
+# 4.1 Income
+
+One major contributing factor to the ability to pay off loans is to have an income. 
+
+```{r echo=F}
+hist(loan_data$income, main="Figure 1 - Initial Income Histogram", xlab="Income")
+```
+
+The income histogram immediately depicts that there are some extreme values, making this data appear right-skewed. The Z-Score's for the income field depict that the median is -0.1604 standard deviations away from the mean, but the maximum value is 115.5 standard deviations; suggesting we have some outliers to either: remove, inferr, or possibly turn income into a categorical variable depicting income range.
+
+```{r echo=F}
+loan_sd <- sd(loan_data$income)*sqrt((length(loan_data$income)-1)/(length(loan_data$income)))
+loan_data$income_zscore <- (loan_data$income - mean(loan_data$income)) / loan_sd
+
+summary(loan_data$income_zscore)
+```
+
+```{r echo=F}
+loan_data$income[ loan_data$income_zscore > 4 ] <- median(loan_data$income, na.rm=TRUE)
+loan_data$income[ loan_data$income_zscore < -4 ] <- median(loan_data$income, na.rm=TRUE)
+
+hist(loan_data$income, main="Figure 2 - Income within +- 4 Std Deviations", xlab="Income")
+boxplot(loan_data$income, main="Figure 3 - Income within +- 4 Std Deviations",  ylab="Income")
+```
+
+Omitting 134 containing income within +- 4 standard deviations from the mean and converting them to NA values, we can see that our income sample is right-skewed. In attempt to normalize the data and reduce the extremeness of the tail, depicted in the boxplot in figure 3, the square root was applied to the income field and stored in a separate column "income_sqrt". Figure 4 reflects the application of the square root function, depicting a normal distribution.
+
+```{r echo=F}
+loan_data$income_sqrt <- sqrt(loan_data$income)
+hist(loan_data$income_sqrt, main="Figure 4 - Sqrt of Income", xlab="Sqrt - Income")
+```
+
+# 4.2 Loan Amount
+
+The loan amount is anticipated to be statistically significant due to larger loans requiring a larger income. Those with a large amount of debt and small income may not be able to pay of larger loan amounts. Figure 5 and the associated Q-Q Plot depicts an under-dispersed dataset due to the outliers toward the right tail, but otherwise reflects a right-skewed dataset.
+
+```{r echo=F}
+hist(loan_data$amount, main="Figure 5 - Loan Amounts", xlab="Amount")
+qqnorm(loan_data$amount,
+  ylab = "Loam Amounts",
+  xlab = "Scores",
+  main = "Difference in Loan Amounts"
+); qqline(loan_data$amount)
+```
+
+Taking the square root of the loan amount and saving the result to a column "amount_sqrt" resulted in a more normal distribution with no outliers depicted in the boxpolot in Figure 6.
+
+```{r echo=F}
+loan_data$amount_sqrt <- sqrt(loan_data$amount)
+
+layout(mat = matrix(c(1,2),2,1, byrow=TRUE),  height = c(1,8))
+par(mar=c(0, 3.1, 1.1, 2.1))
+
+boxplot(loan_data$amount_sqrt, horizontal = TRUE)
+par(mar=c(4, 3.1, 1.1, 2.1))
+
+hist(loan_data$amount_sqrt, main="Figure 6 - Loan Amounts", xlab="Amount Sqrt")
+```
+
+# 4.3 Explorations
+
+It was suggested that unverified income be a contributer to loans that may default. This, however, does not appear to be the case. In our sample, 19.8% of the unverified loans are bad whereas verified loans consisted of 33%.
+
+```{r echo=F}
+par(mfrow=c(1,2))
+
+unverified_loans <- loan_data[ loan_data$verified == "Not Verified", ]
+verified_loans <- loan_data[ loan_data$verified == "Verified" | loan_data$verified == "Source Verified", ]
+
+verified_tbl <- table(verified_loans$loan_status)
+#   Bad  Good 
+#   6142 18483 -> 0.33
+unverified_tbl <- table(unverified_loans$loan_status)
+# Bad Good 
+# 1700 8591 -> 0.198
+
+barplot(table(unverified_loans$loan_status), main="Figure 8 - Unverified Loans")
+barplot(table(verified_loans$loan_status), main="Figure 9 - Verified Loans")
+```
+
+# 4.3.1 Reason Behind the Loan
+
+Another possibility is that different types of loans are more subject to default. From the loan status by reason plot, we can see that debt consolidation is one of the main reasons behind a loan, where just under one-third of the loans fall into bad status. 
+
+```{r echo=F}
+library(ggplot2)
+
+reason_tbl <- table(loan_data$reason, loan_data$loan_status)
+
+ggplot(as.data.frame(reason_tbl), aes(x=Var1, y = Freq, fill=Var2)) + 
+  labs(title = "Loan Status by Reason", x = "Loan Reason", y = "Total Loans", color = "Loan Status") +
+  geom_bar(stat="identity", position = "dodge") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_fill_discrete(name = "Loan Status")
+
+```
+
+
+# 4.3.2 Debt Ratio without Mortgage
+
+From the loan status debt ratio chart, we can see that most applicants have a debt ratio between 10% and 25% without their monthly mortgage. There doesn't appear to be any correlation between debt ratio without mortgage and loan status with lower ratios, however, as they increase, we begin to see instances where there's just over 50% of loans in bad status with a debt ratio of 33% - 50%, and 40% of loans in bad status with a debt ratio of 25% - 33%.
+
+```{r echo=F}
+debt_consol_data <- loan_data
+
+debt_consol_data$debtIncRat[ debt_consol_data$debtIncRat < 10 ] <- "< 10%"
+debt_consol_data$debtIncRat[ debt_consol_data$debtIncRat >= 10 & debt_consol_data$debtIncRat <= 25 ] <- "10% - 25%"
+debt_consol_data$debtIncRat[ debt_consol_data$debtIncRat > 25 & debt_consol_data$debtIncRat <= 33 ] <- "25% - 33%"
+debt_consol_data$debtIncRat[ debt_consol_data$debtIncRat > 33 & debt_consol_data$debtIncRat <= 50 ] <- "33% - 50%"
+debt_consol_data$debtIncRat[ debt_consol_data$debtIncRat > 50 & debt_consol_data$debtIncRat <= 66 ] <- "50% - 66%"
+debt_consol_data$debtIncRat[ debt_consol_data$debtIncRat > 66 & debt_consol_data$debtIncRat <= 75 ] <- "66% - 75%"
+debt_consol_data$debtIncRat[ debt_consol_data$debtIncRat > 75 & debt_consol_data$debtIncRat <= 90 ] <- "75% - 90%"
+debt_consol_data$debtIncRat[ debt_consol_data$debtIncRat > 90 ] <- "> 90%"
+
+
+
+dbt_ratio_tbl <- table(debt_consol_data$debtIncRat, debt_consol_data$loan_status)
+
+dbt_ratio_tbl
+
+ggplot(as.data.frame(dbt_ratio_tbl), aes(x=Var1, y = Freq, fill=Var2)) + 
+  labs(title = "Loan Status Debt Ratio", x = "Debt to Income Ratio", y = "Total Loans", color = "Loan Status") +
+  geom_bar(stat="identity", position = "dodge") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_fill_discrete(name = "Loan Status")
+
+```
+
+# 4.3.3 Other Potential Predictors
+
+The Loan rate, grade, home status, and income brackets were also reviewed. From these results we can see that as the risk of the loan increases, from grade A through G with G being the most risky, we can see an increase in bad loans in proportion to good loans as we pass the C-loan threshold. There is also an increase in bad loans as the interest rate increases, over 75% of loans at an interest rate larger than 17% are bad loans. We also see that just under 40% of loans distributed to applicants that have an income of $9,700 - $39,475 are bad loans. Most applicants for loans made between $39,476 and $84,200 but just under one-third of these loans became bad loans. We can also see that there is an increase in 
+
+```{r echo=F}
+library(gridExtra)
+library(cowplot)
+
+columns <- names(loan_data)
+columns <- columns[!(columns %in%  c('amount', 'payment', 'income', 'status', 'loan_status', 'income_sqrt', 'amount_sqrt', 'income_zscore', 'debtIncRat', 'reason', 'verified', 'totalPaid'))]
+
+charts <- columns %>% map(function(colnam) {
+  tbl <- table(loan_data[[colnam]], loan_data$loan_status)
+
+  ggplot(as.data.frame(tbl), aes(x=Var1, y = Freq, fill=Var2)) + 
+    labs(title = paste("Loan Status ", colnam), x = colnam, y = "Total Loans", color = "Loan Status") +
+    geom_bar(stat="identity", position = "dodge") + 
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+    scale_fill_discrete(name = "Loan Status")
+})
+```
+
+
+```{r echo=F}
+for (i in c(2, 3, 5, 22)) {
+  print(charts[[i]])
+}
+```
+
+```{r echo=F}
+hist(loan_data$rate)
+fivenum(loan_data$rate)
+```
+
+From histogram, we can see that only few observations are with interest rate higher than 25%. Most of interest rates are between 13% and 16% with the minimum being 5%. We can also conclude that 75% of our observations are lower than 16%. 
+
+# 4.3.5 Collinearity
+
+Before creating our logistic model, we need to explore the correlations between the variables in our sanitized data set. We will identify which variables are highly correlated to avoid a skewed model.
+
+
+There is a strong correlation between the loan amount and payment (0.952245818). This is expected as the payment will determine the loan amount. We also can see a correlation between payment and income (0.466157354) and amount and income (0.480909855).
+```{r echo=FALSE, INCLUDE=FALSE}
+cor(loan_data[, sapply(loan_data, class) != 'factor' ]) # factors can't be in correlation
+```
+
+## 5. The Logistic Model
+
+After reviewing the data and identifying correlations between variables, the following independent variables were selected to determine our dependent variable loan_status: debtIncRat, pubRec, income, totalAcc, home, length, delinq2yr, rate, grade, inq6mth, reason, amount, totalRevBal, revolRatio. Due to the correlation between amount and payment, this was excluded. There is a slight correlation between payment, income and amount, however not a strong enough correlation to conclude that they should be excluded.
+
+```{r echo=F, INCLUDE=F}
+set.seed(312)
+#names(subset(loan_data))
+
+loan_data.selected_fields <- subset(loan_data, select = c(1, 3, 5:8, 11:14, 16:18, 27, 30))
+sample_data <- sample.split(loan_data.selected_fields$loan_status, 0.80)
+loan_data.training.data <- subset(loan_data.selected_fields, sample_data == TRUE)
+loan_data.test.data <- subset(loan_data.selected_fields, sample_data == FALSE)
+
+loan_data.model.full <- glm(loan_status ~ ., data = loan_data.training.data, family = "binomial")
+summary(loan_data.model.full)
+```
+
+The prediction was ran against the fitted data with a threshold of 0.5, where any value >= 0.5 is a Good loan, and anything < 0.5 is bad.
+
+```{r echo=F}
+threshold = 0.5
+prob_full <- predict(loan_data.model.full, newdata = loan_data.test.data, type = "response")
+prob_cut <- ifelse(prob_full > threshold, 'Good', 'Bad')
+
+cTab <- table(prob_cut, loan_data.test.data$loan_status)
+v <- sum(diag(cTab)) / sum(cTab)
+
+print(paste('Proportion correctly predicted = ', v))
+```
+
+According to our training sample, our model predicts 77.66% of the data, suggesting we have a decent model fitting our data.
+
+```{r echo=F}
+vif(loan_data.model.full)
+```
+
+When reviewing the VIF, we can see there are some concerns with the rate ( 14.90 ), different loan grades ( 3.6 - 11.66), and reason ( 1.8 - 31.59 ).
+
+
+```{r echo=F, INCLUDE=F}
+confusionMatrix(prob_cut, loan_data.test.data$loan_status, positive = 'Good')
+```
+
+Lastly our model really struggles with identifying Bad loans, only predicting 7.33% of them, hence a balanced accuracy of only 52.63% . It does, however, accurately predict Good loans, capturing 98.0% of them.
+
+## 6. Optimizing the Threshold for Accuracy
+
+Our existing model is fairly accurate in predicting Good loans. We can then adjust our threshold to potentially capture more Bad loans while losting some accuracy with our Good loans. We can also explore additional variables to add to our model, or potentially train our model with a more balenced data set. Currently 77.5% of the records in our sample are Good loans.
+
+# 6.1 Exploring Thresholds
+
+```{r echo=F}
+threshold = 0.719
+prob_full <- predict(loan_data.model.full, newdata = loan_data.test.data, type = "response")
+prob_cut <- ifelse(prob_full > threshold, 'Good', 'Bad')
+
+cTab <- table(prob_cut, loan_data.test.data$loan_status)
+v <- sum(diag(cTab)) / sum(cTab)
+
+print(paste('Proportion correctly predicted = ', v))
+
+```
+
+```{r}
+hist(prob_full)
+confusionMatrix(prob_cut, loan_data.test.data$loan_status, positive = 'Good')
+```
+
+Increasing the threshold to 0.719 to account for the Bad loans, we see a significant increase in the Specificity ( prediction of Bad loans ), now at 50.9%. We did, however lose a significant amount of Sensitivity, dropping down to 74.4% when increasing the threshold to 0.719. Our models overall accurance is 71.17% with an improved balanced accuracy of 64.60%.
+
+## 6.2 Balanced Training Data
+
+In an attempt improve our model, we can train it with a more balanced dataset to more accurately predict Bad loans.
+
+```{r echo=F}
+
+balanced_sample <- ROSE(loan_status ~ ., data = loan_data.training.data, seed = 312)$data
+balanced_sample$reason <- factor(loan_data.training.data$reason)
+
+balanced.fit <- glm(loan_status ~ ., data = balanced_sample, family = "binomial")
+balanced_pred <- predict(balanced.fit, newdata = loan_data.test.data, type = "response")
+
+summary(balanced.fit)
+
+hist(balanced_pred)
+
+roc.curve(
+  loan_data.test.data$loan_status, balanced_pred,
+  col = "blue",
+  main="ROC curve")
+
+threshold = 0.52
+
+prob_cut <- ifelse(balanced_pred > threshold, 'Good', 'Bad')
+
+confusionMatrix(prob_cut, loan_data.test.data$loan_status, positive = 'Good')
+```
+
+This resulted in a model with an AUC of 0.715. Our models accuracy at a threshold of 0.719 is a dismal 22.53%. Adjusting the threshold to 0.52 improved the overall accuracy to 33.41% with a Sensitivity of 33.33% and a Specificity of 33.67%. The AIC of the balanced model was 35104, performing worse than our initial model with an AIC of 27270. Further adjustment of the threshold has a negative impact on either Sensitivity or Specificity with both being 33% at a threshold of 0.52.
+
+Our initial model with an unbalanced training dataset is more accurate at predicting Good and Bad loans than our model with a balanced training dataset. We can further adjust our threshold to 0.765 to have a Sensitivity and Specificity of 66% with an overall accuracy of 67%, but remains consistent between predicting Good and Bad loans.
+
+# 6.3 Maximized Accuracy
+
+```{r echo=F}
+set.seed(312)
+
+#
+# Include the total paid field
+#
+loan_data.selected_fields <- subset(loan_data, select = c(1, 3, 5:8, 11:14, 16:19, 27, 30))
+sample_data <- sample.split(loan_data.selected_fields$loan_status, 0.80)
+loan_data.training.data <- subset(loan_data.selected_fields, sample_data == TRUE)
+loan_data.test.data <- subset(loan_data.selected_fields, sample_data == FALSE)
+
+prob_full <- predict(loan_data.model.full, newdata = loan_data.test.data, type = "response")
+
+#
+# Create a profit analysis on our model based from various thresholds
+# 
+threshold_analysis <- data.frame(
+  threshold = numeric(),
+  fp_rate = numeric(),
+  profits = numeric(),
+  losses = numeric(),
+  missed = numeric(),
+  net = numeric(),
+  accuracy = numeric()
+)
+
+prob_full <- predict(loan_data.model.full, newdata = loan_data.test.data, type = "response")
+
+for( threshold in seq(0.01, 0.99, by = 0.01) ) {
+  pred_cut <- stats::quantile(prob_full, threshold)
+  predicted_status <- if_else(prob_full > pred_cut, 'Good', 'Bad')
+  #actual <- lapply(loan_data.test.data$loan_status, as.character)
+  actual <- loan_data.test.data$loan_status
+
+  profit_tbl <- data.frame(
+    status = actual,
+    predicted_status,
+    total_paid = as.numeric(loan_data.test.data$totalPaid),
+    loan_amount = as.numeric(loan_data.test.data$amount)
+  )
+  
+  fptp_tbl <- cbind(actual, predicted_status)
+  
+  approved_loans <- fptp_tbl[predicted_status == 'Good', ]
+  
+  # support for older version of R on my laptop
+  approved_loans[,1] <- if_else(approved_loans[,1] == '2', 'Good', 'Bad')
+
+  #
+  # profits include only loans we've accurately predicted to be good / paid off
+  #
+  profits_set <- subset(profit_tbl, status == 'Good' & predicted_status == 'Good' )
+  profits <- sum(profits_set$total_paid) - sum(profits_set$loan_amount)
+  
+  #
+  # losses includes loans that are in a bad status, but we predicted as good
+  #
+  losses_set <- subset(profit_tbl, status == 'Bad' & predicted_status == 'Good')
+  losses <- sum(losses_set$loan_amount) - sum(losses_set$total_paid)
+
+  #
+  # Potential income, good loans we predicted in bad status
+  # won't classify as losses as we never took the risk of the loan
+  #
+  missed_set <- subset(profit_tbl, status == 'Good' & predicted_status == 'Bad')
+  missed <- sum(missed_set$total_paid) - sum(missed_set$loan_amount)
+  
+  cTab <- table(predicted_status, loan_data.test.data$loan_status)
+  accuracy <- sum(diag(cTab)) / sum(cTab)
+  
+  threshold_analysis[nrow(threshold_analysis) + 1,] = cbind(
+    threshold = threshold,
+    fp_rate = (sum(approved_loans == 'Bad') / length(approved_loans)),
+    profits = profits,
+    losses = losses,
+    missed = missed,
+    net = (profits - losses),
+    accuracy = accuracy
+  )
+}
+```
+
+The maximum accuracy threshold was generated from a sequence of 0.01 to 0.99 in steps of 0.01. This threshold ignores the false-positive rate and emphasizes accuracy as opposed to predictive balance.
+
+```{r}
+threshold_analysis[which.max(threshold_analysis$accuracy), ]
+```
+
+```{r echo=F}
+
+par(mfrow=c(1,2))
+
+plot(threshold_analysis$accuracy, threshold_analysis$fp_rate,
+     main = 'Accuracy over FP-Rate',
+     xlab = 'Accuracy',
+     ylab = 'False-Positive Rate')
+
+plot(threshold_analysis$threshold, threshold_analysis$accuracy,
+     main = 'Threshold over Accuracy',
+     xlab = 'Threshold',
+     ylab = 'Accuracy')
+```
+
+At a threshold of 0.05, we have a false-positive rate of 10.4%, a net income of $1,670,259, and an accuracy of 77.8%.
+
+## 7. Optimizing the Threshold for Profit
+
+With our model, we're looking to identify a cut-off percentage on new applicants to maximize profit by preventing bad loans.
+
+When we come across a true positive -- loans in good status and we predicted it to be in good status. The loan amount is deducted from the total paid. We've classified loans that are only paid off as in Good status and the only income is the collected interest on the loan.
+
+Losses include any false positives -- loans in bad status that we predicted as Good. Losses are computed as the loan amount minus any amount aready paid.
+
+The maximum accuracy threshold was generated from a sequence of 0.01 to 0.99 in steps of 0.01
+
+```{r}
+threshold_analysis[which.max(threshold_analysis$net), ]
+```
+
+Our analysis states that at a threshold level of 0.25, we'll have a false-positive rate of 8%, with a net profit of $3,100,486, and an accuracy of 73.3%.
+
+```{r echo=F}
+par(mfrow=c(2,2))
+
+plot(threshold_analysis$threshold, threshold_analysis$net,
+     main = 'Threshold over Net Profit',
+     xlab = 'Threshold',
+     ylab = 'Net Profit')
+
+plot(threshold_analysis$threshold, threshold_analysis$missed,
+     main = 'Threshold over Missed Profit',
+     xlab = 'Threshold',
+     ylab = 'Missed Profit')
+
+# Just confirming that as we increase the threshold, the FP rate decreases ( ROC curve depicts this )
+plot(threshold_analysis$threshold, threshold_analysis$fp_rate,
+     main = 'Threshold over FP-Rate',
+     xlab = 'Threshold',
+     ylab = 'False-Positive Rate')
+
+
+```
+
+
+## 8. Results Summary
+
+When optimizing the threshold for accuracy it became apparent that adjusting the threshold had significant impacts on our sensitivity and specificity. Our model really struggles with identifying Bad loans, only predicting 7.33% of them. It does, however, accurately predict Good loans, capturing 98.0% of them. When attempting to correct this with a balanced dataset, the AIC of the balanced model was 35104 and performed worse than our initial model with an AIC of 27270.
+
+Using our initial model and ignoring sensitivity and specificity, the maximum accuracy is achieved at a threshold of 0.05 with an accuracy of 77.8%.
+
+The initial model was also utilized for optimizing the threshold for profit. Ignoring accuracy and the false-positive rate, our analysis concluded that at a threshold level of 0.25, we'll have a false-positive rate of 8%, with a net profit of $3,100,486, and an accuracy of 73.3%.
+
