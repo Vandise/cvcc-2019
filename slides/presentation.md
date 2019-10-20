@@ -7,7 +7,7 @@
 
 - Benjamin J. Anderson
 - Contractor - Eau Claire Development LLC
-- Lead Privacy Engineer - Viacom/CBS
+- Chief Privacy Engineer - Viacom/CBS
 - Instructor at CVTC
 - github.com/Vandise
 - Aspiring Data Scientist
@@ -38,9 +38,11 @@
 	- you can make them say anything
 - Polls / random sampling are an irresponsible representation of a population
 
+——-
+
 ![inline](img/cell_phones.png)
 
-——-
+---
 
 # So what is Data Science?
 

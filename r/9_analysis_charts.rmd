@@ -1,0 +1,36 @@
+## Maximize Accuracy
+
+```{r}
+par(mfrow=c(1,2))
+
+plot(threshold_analysis$accuracy, threshold_analysis$fp_rate,
+     main = 'Accuracy over FP-Rate',
+     xlab = 'Accuracy',
+     ylab = 'False-Positive Rate')
+
+plot(threshold_analysis$threshold, threshold_analysis$accuracy,
+     main = 'Threshold over Accuracy',
+     xlab = 'Threshold',
+     ylab = 'Accuracy')
+```
+
+## Maximize Profits
+```{r}
+par(mfrow=c(2,2))
+
+plot(threshold_analysis$threshold, threshold_analysis$net,
+     main = 'Threshold over Net Profit',
+     xlab = 'Threshold',
+     ylab = 'Net Profit')
+
+plot(threshold_analysis$threshold, threshold_analysis$missed,
+     main = 'Threshold over Missed Profit',
+     xlab = 'Threshold',
+     ylab = 'Missed Profit')
+
+# Just confirming that as we increase the threshold, the FP rate decreases ( ROC curve depicts this )
+plot(threshold_analysis$threshold, threshold_analysis$fp_rate,
+     main = 'Threshold over FP-Rate',
+     xlab = 'Threshold',
+     ylab = 'False-Positive Rate')
+```
