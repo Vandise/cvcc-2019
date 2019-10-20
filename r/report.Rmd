@@ -1,9 +1,10 @@
 ---
-title: 'Predicting Loan Defaults with Logistic Regression'
+title: "Predicting Loan Defaults with Logistic Regression"
 author: "Benjamin J. Anderson"
 date: "04.22.2019"
 output:
-  word_document
+  html_document:
+    df_print: paged
 fontsize: 12pt
 ---
 
@@ -326,7 +327,7 @@ The Loan rate, grade, home status, and income brackets were also reviewed. From 
 
 ```{r echo=F}
 library(gridExtra)
-library(cowplot)
+#library(cowplot)
 
 columns <- names(loan_data)
 columns <- columns[!(columns %in%  c('amount', 'payment', 'income', 'status', 'loan_status', 'income_sqrt', 'amount_sqrt', 'income_zscore', 'debtIncRat', 'reason', 'verified', 'totalPaid'))]
